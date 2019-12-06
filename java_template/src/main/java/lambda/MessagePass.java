@@ -33,9 +33,10 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
 
     static String nodedata = "";
     static int calls = 0;
-    //static final String bucketname = "test.bucket.562f19.wjl";    
+    
+    // Replace with bucketname below
+    // This is the bucket where SAAF files will be stored
     static final String bucketname = "tcss562.mylogs.aaa";    
-    static final String bucketfolder = "";
     
     /**
      * Lambda Function Handler
@@ -45,7 +46,6 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
      * @return HashMap that Lambda will automatically convert into JSON.
      */
     public HashMap<String, Object> handleRequest(Request request, Context context) {
-        System.out.println("NEW LAMBDA: " + request.toString());
         int totalCalls = 0;
         
         //Collect inital data.
@@ -58,16 +58,6 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
         
         // Pass data, only if this node is just now receieving it...
         final ObjectMapper mapper = new ObjectMapper();
-        try
-        {
-            System.out.println("INCOMING request JSON=" + mapper.writeValueAsString(request));
-        }
-        catch (JsonProcessingException jpe)
-        {
-            System.out.println("Error displaying INCOMING request object=" + jpe.toString());
-        }
-        System.out.println("cond-1: req-curr-round=" + request.getCurrentround() + " req-rounds=" + request.getRounds());
-        System.out.println("cond 2: nodedata=" + nodedata + " req-getdata=" + request.getData() + " req-getSleep=" + request.getSleep());
         if ((request.getCurrentround() <= request.getRounds()) && (!nodedata.matches(request.getData())) && (!request.getSleep()))
         {
             // Persist the data locally
@@ -80,22 +70,13 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
                 newRequest.setNodespread(request.getNodespread());
                 newRequest.setData(request.getData());
                 newRequest.setSleep(false);
-                //final ObjectMapper mapper = new ObjectMapper();
-                try
-                {
-                    System.out.println("new request JSON=" + mapper.writeValueAsString(newRequest));
-                }
-                catch (JsonProcessingException jpe)
-                {
-                    System.out.println("Error displaying newRequest object=" + jpe.toString());
-                }
 
                 final MessagePassingService messagePassingService = LambdaInvokerFactory.builder()
                         .lambdaClient(AWSLambdaClientBuilder.defaultClient())
                         .build(MessagePassingService.class);   
 
+//                *** EXAMPLE of calling Lambda function in an alternate REGION
 //                AWSLambda al = AWSLambdaClientBuilder.standard().withRegion(Regions.US_EAST_2).defaultClient();
-//
 //                final MessagePassingService messagePassingService = LambdaInvokerFactory.builder()
 //                        .lambdaClient(al)
 //                        .build(MessagePassingService.class);   
@@ -107,23 +88,15 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
                     totalCalls = totalCalls + 1;
                     System.out.println("Nodespread " + i+1 + " of " + request.getNodespread()); 
                     HashMap<String, Object> newHM = messagePassingService.callMessagePassing(newRequest);
-                    //Response newHM = messagePassingService.callMessagePassing(newRequest);
                     System.out.println("lambda function invoke complete");
                     System.out.println("function-response=" + newHM.toString());
                     totalCalls = totalCalls + Integer.parseInt(newHM.get("totalCalls").toString());
-                    //totalCalls = totalCalls + newHM.getTotalCalls();
-                    
                 }
             }
             
         }
         else
         {
-//            if ((request.getCurrentround() == request.getRounds()))
-//            {
-//                // Persist the data locally for the last round
-//                nodedata=request.getData();
-//            }
             
             System.out.println("Round is " + request.getCurrentround() + " of " + request.getRounds());
             System.out.println("Request to pass data, but local node has data='" + nodedata + "'");
@@ -131,12 +104,11 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
             {
                 if (request.getSleep())
                 {
+                    // The long sleep interval is used to initialize a set of function instances to
+                    // receieve the data message...
                     System.out.println("SLEEEPING!!!");
                     Thread.sleep(12000);
                 }
-                //r.setCalls(calls);
-                // Reset calls counter to 0 so message passing can be retested
-                //calls = 0;
             }
             catch (InterruptedException ie)
             {
@@ -144,7 +116,6 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
             }
         }
         
-
         // Set return result in Response class, class is marshalled into JSON
         Response r = new Response();
         r.setValue(nodedata);
@@ -156,11 +127,13 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
         
         //Collect final information such as total runtime and cpu deltas.
         inspector.inspectAllDeltas();
+
+        // EXAMPLE CODE for publishing SAAF output to an S3 bucket
         
+        // Create unique filename
         String filename = UUID.randomUUID().toString() + ".json";
-        //StringWriter sw = new StringWriter();
-        //sw.append(inspector.finish().toString());
-        //byte[] bytes = sw.toString().getBytes(StandardCharsets.UTF_8);
+        
+        // Serialize the JSON into a bytestream 
         byte[] bytes = null;
         try
         {
@@ -173,17 +146,16 @@ public class MessagePass implements RequestHandler<Request, HashMap<String, Obje
             sw.append("Unable to generate JSON");
             bytes = sw.toString().getBytes(StandardCharsets.UTF_8);
         }
+        
+        // Pass bytestream to input stream for output to S3 bucket
         InputStream is = new ByteArrayInputStream(bytes);
         ObjectMetadata meta = new ObjectMetadata();
         meta.setContentLength(bytes.length);
         meta.setContentType("text/plain");
-            
-        System.out.println("Bucket: " + bucketname + " bucketfolder=" + bucketfolder + " filename:" + filename + " size:" + bytes.length);
 
+        // publish JSON to bucket
         AmazonS3 s3Client = AmazonS3ClientBuilder.standard().build();
         s3Client.putObject(bucketname, filename, is, meta);        
-        //s3Client.putObject(bucketname + "/saaf", filename, is, meta);
-        //s3Client.putObject((bucketfolder.length()>0 ? bucketname + "/" + bucketfolder: bucketname) , filename, is, meta);
         
         inspector.consumeResponse(r);
         return inspector.finish();
