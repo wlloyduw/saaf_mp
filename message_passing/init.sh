@@ -123,7 +123,9 @@ do
 done < "$filename"
 
 # invalidates old containers
+aws lambda get-function --function-name us-east-1:tutorial9 --query 'Configuration.[State, LastUpdateStatus]'
 aws lambda update-function-configuration --function-name $parfunction --region us-east-1 --timeout 240 > /dev/null
+aws lambda get-function --function-name us-east-1:tutorial9 --query 'Configuration.[State, LastUpdateStatus]'
 aws lambda update-function-configuration --function-name $parfunction --region us-east-1 --timeout 300 > /dev/null
 
 for (( i=1 ; i <= $threads ; i ++))
